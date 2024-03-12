@@ -30,16 +30,35 @@ func main() {
 
 func HandleConnection(conn net.Conn) {
 	message, _ := bufio.NewReader(conn).ReadString('\n')
-	path := ExtractPath(message)
+	path, msg := ParsePath(message)
 
-	if path == "/" {
-		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+	if strings.Contains(path, "/echo/") {
+		conn.Write([]byte(CreateResponse(msg)))
 	} else {
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 	}
 }
 
-func ExtractPath(s string) string {
+func ParsePath(s string) (string, string) {
 	parts := strings.Split(s, " ")
-	return parts[1]
+	if len(parts) < 2 {
+		fmt.Println("No path to extract")
+		os.Exit(1)
+	}
+
+	path := parts[1]
+	for _, part := range parts {
+		fmt.Println(part)
+	}
+	return path[0:5], path[5:]
+}
+
+func CreateResponse(msg string) string {
+	s := fmt.Sprintf(
+		`HTTP/1.1 200 OK\r\n
+		Content-Type: text/plain\r\n
+		Content-Length: %v\r\n
+		\r\n
+		%v\r\n\r\n`, len(msg), msg)
+	return s
 }
