@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -10,6 +11,9 @@ import (
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
+
+	dir := flag.String("directory", ".", "Directory")
+	flag.Parse()
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
@@ -24,11 +28,11 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go HandleConnection(conn)
+		go HandleConnection(conn, *dir)
 	}
 }
 
-func HandleConnection(conn net.Conn) {
+func HandleConnection(conn net.Conn, dir string) {
 	defer conn.Close()
 
 	request := ReadHttpRequest(conn)
@@ -53,6 +57,21 @@ func HandleConnection(conn net.Conn) {
 		conn.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n", len(body))))
 		conn.Write([]byte("\r\n"))
 		conn.Write([]byte(fmt.Sprintf("%s", body)))
+	} else if strings.Contains(path, "files") {
+		fmt.Printf("Opening file %s%s", dir, msg)
+		file, err := os.ReadFile(dir + msg)
+		if err == nil {
+			body := string(file)
+			fmt.Printf("File body:\n%s", body)
+			conn.Write([]byte("HTTP/1.1 200 OK\r\n"))
+			conn.Write([]byte("Content-Type: application/octet-stream\r\n"))
+			conn.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n", len(body))))
+			conn.Write([]byte("\r\n"))
+			conn.Write([]byte(fmt.Sprintf("%s\r\n", body)))
+		} else {
+			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		}
+
 	} else if path == "/" {
 		fmt.Println("/ BRANCH")
 		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
