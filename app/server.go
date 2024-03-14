@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"net"
@@ -58,20 +59,34 @@ func HandleConnection(conn net.Conn, dir string) {
 		conn.Write([]byte("\r\n"))
 		conn.Write([]byte(fmt.Sprintf("%s", body)))
 	} else if strings.Contains(path, "files") {
-		fmt.Printf("Opening file %s%s", dir, msg)
-		file, err := os.ReadFile(dir + msg)
-		if err == nil {
-			body := string(file)
-			fmt.Printf("File body:\n%s", body)
-			conn.Write([]byte("HTTP/1.1 200 OK\r\n"))
-			conn.Write([]byte("Content-Type: application/octet-stream\r\n"))
-			conn.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n", len(body))))
-			conn.Write([]byte("\r\n"))
-			conn.Write([]byte(fmt.Sprintf("%s\r\n", body)))
+		method := ParseMethod(request)
+		if method == "GET" {
+			fmt.Printf("GET BRANCH\n")
+			fmt.Printf("Opening file %s%s", dir, msg)
+			file, err := os.ReadFile(dir + msg)
+			if err == nil {
+				body := string(file)
+				fmt.Printf("File body:\n%s\n", body)
+				conn.Write([]byte("HTTP/1.1 200 OK\r\n"))
+				conn.Write([]byte("Content-Type: application/octet-stream\r\n"))
+				conn.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n", len(body))))
+				conn.Write([]byte("\r\n"))
+				conn.Write([]byte(fmt.Sprintf("%s\r\n", body)))
+			} else {
+				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+			}
 		} else {
-			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+			fmt.Printf("POST BRANCH\n")
+			body := ParseBody(request)
+			fmt.Printf("Parsed body: %s\n (len: %d)", body, len(body))
+			err := os.WriteFile(dir+msg, []byte(body), 0777)
+			os.Truncate(dir+msg, int64(len(body)))
+			if err != nil {
+				fmt.Printf("Write to %s%s failed: %s", dir, msg, err.Error())
+				os.Exit(1)
+			}
+			conn.Write([]byte("HTTP/1.1 201 CREATED\r\n\r\n"))
 		}
-
 	} else if path == "/" {
 		fmt.Println("/ BRANCH")
 		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
@@ -90,6 +105,27 @@ func ReadHttpRequest(conn net.Conn) string {
 	}
 
 	return string(buffer)
+}
+
+func ParseMethod(s string) string {
+	lines := strings.Split(s, "\n")
+	parts := strings.Split(lines[0], " ")
+	fmt.Printf("Method parsed: %s\n", parts[0])
+	return parts[0]
+}
+
+func ParseBody(s string) string {
+	lines := strings.Split(s, "\r\n")
+	for i, line := range lines {
+		if line != "" {
+			continue
+		}
+
+		b := []byte(lines[i+1])
+
+		return string(bytes.Trim(b, "\x00"))
+	}
+	return ""
 }
 
 func ParseUserAgent(s string) string {
