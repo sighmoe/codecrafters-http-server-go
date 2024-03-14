@@ -18,12 +18,14 @@ func main() {
 	}
 
 	defer l.Close()
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+		go HandleConnection(conn)
 	}
-	HandleConnection(conn)
 }
 
 func HandleConnection(conn net.Conn) {
@@ -33,15 +35,29 @@ func HandleConnection(conn net.Conn) {
 	fmt.Printf("Request: %s", request)
 	path, msg := ParsePath(request)
 
+	fmt.Printf("Path: %s Msg: %s\n", path, msg)
+
 	if strings.Contains(path, "echo") {
+		fmt.Println("ECHO BRANCH")
 		conn.Write([]byte("HTTP/1.1 200 OK\r\n"))
 		conn.Write([]byte("Content-Type: text/plain\r\n"))
 		conn.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n", len(msg))))
 		conn.Write([]byte("\r\n"))
 		conn.Write([]byte(fmt.Sprintf("%s\r\n", msg)))
+	} else if strings.Contains(path, "user-agent") {
+		fmt.Println("USER-AGENT BRANCH")
+		body := ParseUserAgent(request)
+		fmt.Printf("Body: %s len: %v\n", body, len(body))
+		conn.Write([]byte("HTTP/1.1 200 OK\r\n"))
+		conn.Write([]byte("Content-Type: text/plain\r\n"))
+		conn.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n", len(body))))
+		conn.Write([]byte("\r\n"))
+		conn.Write([]byte(fmt.Sprintf("%s", body)))
 	} else if path == "/" {
+		fmt.Println("/ BRANCH")
 		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 	} else {
+		fmt.Println("404 BRANCH")
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 	}
 }
@@ -57,26 +73,42 @@ func ReadHttpRequest(conn net.Conn) string {
 	return string(buffer)
 }
 
+func ParseUserAgent(s string) string {
+	parts := strings.Split(s, "\n")
+	if len(parts) < 3 {
+		fmt.Println("Malformed HTTP request")
+		os.Exit(1)
+	}
+
+	for _, part := range parts {
+		if !strings.Contains(part, "User-Agent:") {
+			continue
+		}
+
+		userAgent := strings.Split(part, ":")
+		return strings.TrimSpace(userAgent[1])
+	}
+	return ""
+}
+
 func ParsePath(s string) (string, string) {
 	parts := strings.Split(s, " ")
 	if len(parts) < 2 {
 		fmt.Println("No path to extract")
 		os.Exit(1)
 	}
-
 	path := parts[1]
-	for _, part := range parts {
-		fmt.Println(part)
-	}
 	return ExtractMessage(path)
 }
 
 func ExtractMessage(path string) (string, string) {
-	if len(path) < 5 {
-		return path, ""
+	parts := strings.Split(path, "/")
+
+	if len(parts) < 3 {
+		return ("/" + parts[1]), ""
 	}
 
-	return path[0:5], path[6:]
+	return ("/" + parts[1]), strings.Join(parts[2:], "/")
 }
 
 func CreateResponse(msg string) string {
